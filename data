@@ -1,0 +1,214 @@
+PRAGMA foreign_keys = ON;
+BEGIN;
+
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  email TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  phone TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('tenant', 'owner', 'admin'))
+);
+
+CREATE TABLE districts (
+  name TEXT PRIMARY KEY NOT NULL,
+  city TEXT NOT NULL DEFAULT 'Cần Thơ'
+);
+
+CREATE TABLE wards (
+  district TEXT NOT NULL REFERENCES districts(name),
+  name TEXT NOT NULL,
+  PRIMARY KEY (district, name)
+);
+
+CREATE TABLE rooms (
+  id TEXT PRIMARY KEY NOT NULL,
+  owner_id INTEGER REFERENCES users(id),
+  title TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('Phòng trọ', 'Studio', 'Căn hộ mini', 'Ở ghép')),
+  district TEXT NOT NULL,
+  ward TEXT NOT NULL,
+  street TEXT,
+  address TEXT,
+  size_m2 REAL NOT NULL CHECK (size_m2 > 0),
+  max_occupants INTEGER NOT NULL CHECK (max_occupants > 0),
+  price_vnd INTEGER NOT NULL CHECK (price_vnd > 0),
+  deposit_vnd INTEGER CHECK (deposit_vnd >= 0),
+  electricity_vnd INTEGER CHECK (electricity_vnd >= 0),
+  water_vnd INTEGER CHECK (water_vnd >= 0),
+  available_from TEXT,
+  availability TEXT NOT NULL DEFAULT 'Còn phòng'
+    CHECK (availability IN ('Còn phòng', 'Hết phòng')),
+  listing_status TEXT NOT NULL DEFAULT 'Chờ duyệt'
+    CHECK (listing_status IN ('Chờ duyệt', 'Đang hiển thị', 'Đã ẩn', 'Đã từ chối')),
+  rejection_reason TEXT,
+  description TEXT NOT NULL,
+  contact_name TEXT,
+  contact_phone TEXT,
+  contact_email TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (district, ward) REFERENCES wards(district, name)
+);
+
+CREATE TABLE room_images (
+  room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL CHECK (position >= 1),
+  path TEXT NOT NULL,
+  alt_text TEXT,
+  PRIMARY KEY (room_id, position)
+);
+
+CREATE TABLE amenities (
+  code TEXT PRIMARY KEY NOT NULL,
+  label TEXT NOT NULL
+);
+
+CREATE TABLE room_amenities (
+  room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  amenity_code TEXT NOT NULL REFERENCES amenities(code),
+  PRIMARY KEY (room_id, amenity_code)
+);
+
+CREATE TABLE favorites (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+  saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, room_id)
+);
+
+CREATE TABLE appointments (
+  id TEXT PRIMARY KEY NOT NULL,
+  room_id TEXT NOT NULL REFERENCES rooms(id),
+  tenant_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  visitor_name TEXT NOT NULL,
+  visitor_phone TEXT NOT NULL,
+  requested_date TEXT NOT NULL,
+  requested_time TEXT,
+  proposed_date TEXT,
+  proposed_time TEXT,
+  status TEXT NOT NULL DEFAULT 'Chờ xác nhận'
+    CHECK (status IN ('Chờ xác nhận', 'Chờ khách phản hồi', 'Đã xác nhận',
+                      'Đã từ chối', 'Đã hoàn tất')),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE reports (
+  id INTEGER PRIMARY KEY,
+  room_id TEXT NOT NULL REFERENCES rooms(id),
+  reporter_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  reason TEXT NOT NULL,
+  description TEXT CHECK (length(description) <= 500),
+  status TEXT NOT NULL DEFAULT 'Chờ xử lý'
+    CHECK (status IN ('Chờ xử lý', 'Đã xem')),
+  submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX rooms_catalog_idx ON rooms(listing_status, district, ward, price_vnd);
+CREATE INDEX rooms_owner_idx ON rooms(owner_id);
+CREATE INDEX appointments_room_idx ON appointments(room_id, status, requested_date);
+CREATE INDEX reports_status_idx ON reports(status, submitted_at);
+
+INSERT INTO amenities VALUES
+  ('wifi','Wi-Fi'), ('aircon','Máy lạnh'), ('loft','Gác lửng'),
+  ('parking','Chỗ để xe'), ('bathroom','WC riêng'), ('freedom','Giờ giấc tự do'),
+  ('kitchen','Khu bếp'), ('furnished','Có nội thất');
+
+INSERT INTO districts(name) VALUES ('Ninh Kiều'), ('Cái Răng'), ('Bình Thủy');
+
+INSERT INTO wards VALUES
+  ('Ninh Kiều','Xuân Khánh'),
+  ('Ninh Kiều','An Khánh'),
+  ('Ninh Kiều','Hưng Lợi'),
+  ('Ninh Kiều','An Hòa'),
+  ('Ninh Kiều','Ninh Kiều'),
+  ('Cái Răng','Lê Bình'),
+  ('Cái Răng','Hưng Phú'),
+  ('Cái Răng','Hưng Thạnh'),
+  ('Cái Răng','Thường Thạnh'),
+  ('Cái Răng','Phú Thứ'),
+  ('Cái Răng','Tân Phú'),
+  ('Bình Thủy','An Thới'),
+  ('Bình Thủy','Bình Thủy'),
+  ('Bình Thủy','Bùi Hữu Nghĩa'),
+  ('Bình Thủy','Long Hòa'),
+  ('Bình Thủy','Long Tuyền'),
+  ('Bình Thủy','Thới An Đông'),
+  ('Bình Thủy','Trà An'),
+  ('Bình Thủy','Trà Nóc');
+
+INSERT INTO rooms (
+  id, title, type, district, ward, size_m2, max_occupants,
+  price_vnd, availability, listing_status, description, contact_name, contact_phone
+) VALUES
+  ('phong-tro-co-gac-xuan-khanh','Phòng trọ có gác, gần trường','Phòng trọ','Ninh Kiều','Xuân Khánh',24,2,2300000,'Còn phòng','Đang hiển thị','Phòng có gác lửng, gần Đại học Cần Thơ và các tiện ích sinh hoạt.','Nguyễn Minh','0900000001'),
+  ('studio-noi-that-xuan-khanh','Studio đủ nội thất','Studio','Ninh Kiều','Xuân Khánh',30,2,4800000,'Còn phòng','Đang hiển thị','Studio có nội thất cơ bản, thuận tiện di chuyển đến trường.','Trần Hoài','0901234567'),
+  ('can-ho-mini-an-khanh','Căn hộ mini có ban công','Căn hộ mini','Ninh Kiều','An Khánh',35,3,5500000,'Còn phòng','Đang hiển thị','Căn hộ mini có ban công, khu vực An Khánh.','Lê Quốc Bảo','0900000002'),
+  ('phong-tro-sinh-vien-ninh-kieu','Phòng trọ giá sinh viên','Phòng trọ','Ninh Kiều','Ninh Kiều',20,2,1800000,'Còn phòng','Đang hiển thị','Phòng trọ nhỏ gọn, mức giá phù hợp với sinh viên.','Phạm Ngọc','0900000003'),
+  ('o-ghep-sach-se-xuan-khanh','Ở ghép sạch sẽ gần trường','Ở ghép','Ninh Kiều','Xuân Khánh',28,3,1500000,'Còn phòng','Đang hiển thị','Không gian ở ghép gần trường, có chỗ để xe và giờ giấc tự do.','Lê Ngọc','0902345678'),
+  ('phong-moi-xay-an-khanh','Phòng mới xây có ban công','Phòng trọ','Ninh Kiều','An Khánh',26,3,2800000,'Còn phòng','Đang hiển thị','Phòng mới xây có ban công và nhiều tiện ích cơ bản.',NULL,NULL),
+  ('studio-le-binh-cai-rang','Studio thoáng sáng tại Lê Bình','Studio','Cái Răng','Lê Bình',25,2,2700000,'Còn phòng','Đang hiển thị','Studio thoáng sáng ở khu vực Lê Bình, quận Cái Răng.',NULL,NULL),
+  ('phong-tro-tra-noc-binh-thuy','Phòng trọ gần khu Trà Nóc','Phòng trọ','Bình Thủy','Trà Nóc',22,2,1900000,'Còn phòng','Đang hiển thị','Phòng trọ gần Trà Nóc, quận Bình Thủy.',NULL,NULL);
+
+INSERT INTO room_images VALUES
+  ('phong-tro-co-gac-xuan-khanh',1,'assets/img/img1.jpg','Phòng trọ có gác gần Đại học Cần Thơ'),
+  ('phong-tro-co-gac-xuan-khanh',2,'assets/img/img2.jpg','Phòng trọ có gác gần Đại học Cần Thơ'),
+  ('phong-tro-co-gac-xuan-khanh',3,'assets/img/img3.jpg','Phòng trọ có gác gần Đại học Cần Thơ'),
+  ('phong-tro-co-gac-xuan-khanh',4,'assets/img/img4.jpg','Phòng trọ có gác gần Đại học Cần Thơ'),
+  ('studio-noi-that-xuan-khanh',1,'assets/img/img2.jpg','Studio đầy đủ nội thất tại Xuân Khánh'),
+  ('can-ho-mini-an-khanh',1,'assets/img/img3.jpg','Căn hộ mini có ban công tại An Khánh'),
+  ('phong-tro-sinh-vien-ninh-kieu',1,'assets/img/img4.jpg','Phòng trọ giá sinh viên tại Ninh Kiều'),
+  ('o-ghep-sach-se-xuan-khanh',1,'assets/img/img5.jpg','Phòng ở ghép gần trường'),
+  ('phong-moi-xay-an-khanh',1,'assets/img/img3.jpg','Phòng mới xây tại An Khánh'),
+  ('studio-le-binh-cai-rang',1,'assets/img/img2.jpg','Studio thoáng sáng tại Lê Bình, Cái Răng'),
+  ('phong-tro-tra-noc-binh-thuy',1,'assets/img/img4.jpg','Phòng trọ gần Trà Nóc, Bình Thủy');
+
+INSERT INTO room_amenities VALUES
+  ('phong-tro-co-gac-xuan-khanh','wifi'),
+  ('phong-tro-co-gac-xuan-khanh','loft'),
+  ('phong-tro-co-gac-xuan-khanh','parking'),
+  ('phong-tro-co-gac-xuan-khanh','bathroom'),
+  ('phong-tro-co-gac-xuan-khanh','freedom'),
+  ('studio-noi-that-xuan-khanh','wifi'),
+  ('studio-noi-that-xuan-khanh','aircon'),
+  ('studio-noi-that-xuan-khanh','loft'),
+  ('studio-noi-that-xuan-khanh','parking'),
+  ('studio-noi-that-xuan-khanh','bathroom'),
+  ('studio-noi-that-xuan-khanh','freedom'),
+  ('can-ho-mini-an-khanh','wifi'),
+  ('can-ho-mini-an-khanh','aircon'),
+  ('can-ho-mini-an-khanh','parking'),
+  ('can-ho-mini-an-khanh','bathroom'),
+  ('phong-tro-sinh-vien-ninh-kieu','wifi'),
+  ('phong-tro-sinh-vien-ninh-kieu','loft'),
+  ('phong-tro-sinh-vien-ninh-kieu','parking'),
+  ('phong-tro-sinh-vien-ninh-kieu','bathroom'),
+  ('o-ghep-sach-se-xuan-khanh','wifi'),
+  ('o-ghep-sach-se-xuan-khanh','parking'),
+  ('o-ghep-sach-se-xuan-khanh','bathroom'),
+  ('o-ghep-sach-se-xuan-khanh','freedom'),
+  ('phong-moi-xay-an-khanh','wifi'),
+  ('phong-moi-xay-an-khanh','aircon'),
+  ('phong-moi-xay-an-khanh','loft'),
+  ('phong-moi-xay-an-khanh','parking'),
+  ('phong-moi-xay-an-khanh','bathroom'),
+  ('phong-moi-xay-an-khanh','freedom'),
+  ('studio-le-binh-cai-rang','wifi'),
+  ('studio-le-binh-cai-rang','bathroom'),
+  ('studio-le-binh-cai-rang','parking'),
+  ('phong-tro-tra-noc-binh-thuy','wifi'),
+  ('phong-tro-tra-noc-binh-thuy','aircon'),
+  ('phong-tro-tra-noc-binh-thuy','parking'),
+  ('phong-tro-tra-noc-binh-thuy','bathroom'),
+  ('phong-tro-tra-noc-binh-thuy','freedom');
+
+INSERT INTO appointments (
+  id, room_id, visitor_name, visitor_phone, requested_date, requested_time, status
+) VALUES
+  ('visit-studio-2026-11-14','studio-noi-that-xuan-khanh','Trần Hoài','0901234567','2026-11-14','14:30','Chờ xác nhận'),
+  ('visit-loft-2026-11-16','phong-tro-co-gac-xuan-khanh','Lê Ngọc','0902345678','2026-11-16','10:00','Chờ xác nhận'),
+  ('visit-loft-2026-11-18','phong-tro-co-gac-xuan-khanh','Nguyễn Minh Anh','0900000001','2026-11-18','09:00','Đã xác nhận');
+
+INSERT INTO reports(room_id, reason, submitted_at) VALUES
+  ('can-ho-mini-an-khanh','Thông tin giá chưa rõ','2026-11-05');
+
+COMMIT;
